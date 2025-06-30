@@ -41,35 +41,36 @@ def check_dependencies():
     """Check if all required dependencies are installed."""
     print("\n📦 Checking dependencies...")
     
+    # Package name -> (import name, minimum version)
     required_packages = [
-        ('numpy', '1.20.0'),
-        ('torch', '1.12.0'),
-        ('pandas', '1.3.0'),
-        ('scikit-learn', '1.0.0'),
-        ('matplotlib', '3.5.0'),
-        ('seaborn', '0.11.0'),
-        ('scipy', '1.7.0'),
-        ('jupyter', None)
+        ('numpy', 'numpy', '1.20.0'),
+        ('torch', 'torch', '1.12.0'),
+        ('pandas', 'pandas', '1.3.0'),
+        ('scikit-learn', 'sklearn', '1.0.0'),  # Package name vs import name
+        ('matplotlib', 'matplotlib', '3.5.0'),
+        ('seaborn', 'seaborn', '0.11.0'),
+        ('scipy', 'scipy', '1.7.0'),
+        ('jupyter', 'jupyter', None)
     ]
     
     missing_packages = []
     
-    for package, min_version in required_packages:
+    for package_name, import_name, min_version in required_packages:
         try:
-            module = importlib.import_module(package)
+            module = importlib.import_module(import_name)
             
             if hasattr(module, '__version__'):
                 version = module.__version__
-                print(f"✅ {package}: {version}")
+                print(f"✅ {package_name}: {version}")
                 
                 if min_version and version < min_version:
-                    print(f"⚠️  Warning: {package} version {version} < {min_version}")
+                    print(f"⚠️  Warning: {package_name} version {version} < {min_version}")
             else:
-                print(f"✅ {package}: Available")
+                print(f"✅ {package_name}: Available")
                 
         except ImportError:
-            print(f"❌ {package}: Missing")
-            missing_packages.append(package)
+            print(f"❌ {package_name}: Missing")
+            missing_packages.append(package_name)
     
     if missing_packages:
         print(f"\n❌ Missing packages: {', '.join(missing_packages)}")
