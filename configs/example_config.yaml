@@ -1,0 +1,29 @@
+# Example configuration file
+# Copy and modify for your experiments
+
+# Model Configuration
+hidden_dims: [128, 64]
+embedding_dim: 32
+activation: relu
+dropout: 0.1
+
+# Training Configuration
+batch_size: 32
+learning_rate: 0.001
+weight_decay: 0.0001
+temperature: 0.1
+num_epochs: 50
+
+# Data Configuration
+bin_size: 10
+smoothing_sigma: 1.5
+balanced_sampling: true
+exclude_blanks: true
+
+# Hardware Configuration
+cuda_id: 0  # Set to null for CPU
+
+# Evaluation Configuration
+n_clusters_range: [2, 20]
+cv_folds: 5
+save_plots: true
