@@ -43,6 +43,17 @@ try:
 except ImportError:
     print("Warning: neural_repr_package and neural_evaluation not found.")
     print("You may need to install these packages or adjust the import paths.")
+    
+    # Create a simple Config class as fallback
+    class Config:
+        def __init__(self, hidden_dims=[64, 32], embedding_dim=16, batch_size=32, 
+                     learning_rate=0.001, num_epochs=50, cuda_id=None):
+            self.hidden_dims = hidden_dims
+            self.embedding_dim = embedding_dim
+            self.batch_size = batch_size
+            self.learning_rate = learning_rate
+            self.num_epochs = num_epochs
+            self.cuda_id = cuda_id
 
 # Set up plotting
 plt.style.use('default')
@@ -53,16 +64,21 @@ print("📦 Advanced analysis packages imported successfully!")
 print(f"🔧 CUDA available: {torch.cuda.is_available()}")
 
 
-def load_or_create_analysis_data():
+def load_or_create_analysis_data(neural_data=None, stim_table=None, config=None):
     """
     Load existing results or create new data for advanced analysis.
+    
+    Args:
+        neural_data (np.ndarray, optional): Neural activity data of shape (n_neurons, n_samples)
+        stim_table (pd.DataFrame, optional): Stimulus table with trial information
+        config (Config, optional): Configuration for model training
     """
     results_dir = Path("results")
     
-    # Try to load existing results
+    # Try to load existing results first
     embeddings_path = results_dir / "cross_region_embeddings.npz"
     
-    if embeddings_path.exists():
+    if embeddings_path.exists() and neural_data is None:
         print("📂 Loading existing cross-region results...")
         
         # Load embeddings
@@ -79,76 +95,135 @@ def load_or_create_analysis_data():
         print(f"   Loaded {len(regions)} regions: {list(regions)}")
         return embeddings_dict, categories_dict, regions
     
-    else:
-        print("📊 Creating new data for advanced analysis...")
+    # If neural_data and stim_table are provided, use them
+    elif neural_data is not None and stim_table is not None:
+        print("📊 Training model with provided neural data...")
         
-        # Create synthetic data for demonstration
         try:
-            from neural_repr_package import create_test_data
-            neural_data, stim_table = create_test_data()
-        except ImportError:
-            # Create dummy data if package not available
-            print("   Creating synthetic data for demo...")
-            np.random.seed(42)
-            n_samples = 200
-            n_neurons = 100
-            n_categories = 5
+            # Set default config if not provided
+            if config is None:
+                config = Config(
+                    hidden_dims=[128, 64, 32],
+                    embedding_dim=16,
+                    batch_size=32,
+                    learning_rate=0.001,
+                    num_epochs=50,
+                    cuda_id=0 if torch.cuda.is_available() else None
+                )
             
-            neural_data = np.random.randn(n_neurons, n_samples)
-            categories = [f"category_{i%n_categories}" for i in range(n_samples)]
+            # Initialize learner
+            learner = NeuralRepresentationLearner(config)
             
-            # Add some structure to the data
-            for i in range(n_categories):
-                mask = np.array([j%n_categories == i for j in range(n_samples)])
-                neural_data[:, mask] += np.random.randn(n_neurons, 1) * 2
+            # Create datasets
+            train_ds, test_ds, info = learner.create_datasets_from_stim_table(neural_data, stim_table)
+            print(f"   Created datasets: {len(train_ds)} train, {len(test_ds)} test samples")
             
-            # Create dummy embeddings
-            embeddings = np.random.randn(n_samples, 16)
+            # Create data loaders
+            train_loader = learner.create_dataloader(train_ds)
+            test_loader = learner.create_dataloader(test_ds, shuffle=False)
             
-            # Add category structure to embeddings
-            for i in range(n_categories):
-                mask = np.array([j%n_categories == i for j in range(n_samples)])
-                embeddings[mask] += np.random.randn(1, 16) * 3
+            # Initialize model
+            learner.initialize_model(neural_data.shape[0])
+            print(f"   Initialized model with {neural_data.shape[0]} input neurons")
             
-            embeddings_dict = {'Demo_Region': embeddings}
-            categories_dict = {'Demo_Region': categories}
-            regions = ['Demo_Region']
+            # Train the model
+            print("   Training model...")
+            for epoch in range(config.num_epochs):
+                loss = learner.train_epoch(train_loader)
+                if epoch % 10 == 0 or epoch == config.num_epochs - 1:
+                    print(f"     Epoch {epoch+1}/{config.num_epochs}: Loss = {loss:.4f}")
             
-            print(f"   Created demo region with {embeddings.shape[0]} samples")
+            # Extract embeddings
+            print("   Extracting embeddings...")
+            embeddings, categories, metadata = learner.extract_embeddings(test_loader)
+            
+            # Create result dictionary
+            region_name = 'Trained_Region'
+            embeddings_dict = {region_name: embeddings}
+            categories_dict = {region_name: categories}
+            regions = [region_name]
+            
+            # Optionally save results
+            results_dir.mkdir(exist_ok=True)
+            save_path = results_dir / "trained_embeddings.npz"
+            np.savez(save_path,
+                    regions=regions,
+                    **{f'{region}_embeddings': embeddings for region in regions},
+                    **{f'{region}_categories': categories for region in regions})
+            print(f"   Saved results to {save_path}")
+            
+            print(f"   Successfully trained model with {embeddings.shape[0]} samples, {embeddings.shape[1]}D embeddings")
             return embeddings_dict, categories_dict, regions
+            
+        except ImportError:
+            print("   ❌ Neural representation packages not available!")
+            print("   Please install neural_repr_package or provide embeddings directly.")
+            return None, None, None
+        except Exception as e:
+            print(f"   ❌ Error training model: {str(e)}")
+            return None, None, None
+    
+    else:
+        print("📊 Creating synthetic data for demonstration...")
         
-        # Configure and train a quick model (if packages available)
-        config = Config(
-            hidden_dims=[64, 32],
-            embedding_dim=16,
-            batch_size=16,
-            cuda_id=0 if torch.cuda.is_available() else None
-        )
+        # Create dummy data if package not available
+        print("   Creating synthetic data for demo...")
+        np.random.seed(42)
+        n_samples = 200
+        n_neurons = 100
+        n_categories = 5
         
-        learner = NeuralRepresentationLearner(config)
-        train_ds, test_ds, info = learner.create_datasets_from_stim_table(neural_data, stim_table)
+        neural_data = np.random.randn(n_neurons, n_samples)
+        categories = [f"category_{i%n_categories}" for i in range(n_samples)]
         
-        train_loader = learner.create_dataloader(train_ds)
-        test_loader = learner.create_dataloader(test_ds, shuffle=False)
+        # Add some structure to the data
+        for i in range(n_categories):
+            mask = np.array([j%n_categories == i for j in range(n_samples)])
+            neural_data[:, mask] += np.random.randn(n_neurons, 1) * 2
         
-        learner.initialize_model(neural_data.shape[0])
+        # Create dummy embeddings
+        embeddings = np.random.randn(n_samples, 16)
         
-        # Quick training
-        for epoch in range(10):
-            loss = learner.train_epoch(train_loader)
-            if epoch % 3 == 0:
-                print(f"   Epoch {epoch+1}/10: Loss = {loss:.4f}")
+        # Add category structure to embeddings
+        for i in range(n_categories):
+            mask = np.array([j%n_categories == i for j in range(n_samples)])
+            embeddings[mask] += np.random.randn(1, 16) * 3
         
-        # Extract embeddings
-        embeddings, categories, metadata = learner.extract_embeddings(test_loader)
-        
-        # Create single-region result for demo
         embeddings_dict = {'Demo_Region': embeddings}
         categories_dict = {'Demo_Region': categories}
         regions = ['Demo_Region']
         
         print(f"   Created demo region with {embeddings.shape[0]} samples")
         return embeddings_dict, categories_dict, regions
+
+
+def load_or_create_analysis_data_from_embeddings(embeddings_dict, categories_dict, region_names=None):
+    """
+    Create analysis data directly from pre-computed embeddings.
+    
+    Args:
+        embeddings_dict (dict): Dictionary mapping region names to embedding arrays
+        categories_dict (dict): Dictionary mapping region names to category lists
+        region_names (list, optional): List of region names. If None, uses keys from embeddings_dict
+    
+    Returns:
+        tuple: (embeddings_dict, categories_dict, regions)
+    """
+    if region_names is None:
+        regions = list(embeddings_dict.keys())
+    else:
+        regions = region_names
+    
+    print(f"📊 Using provided embeddings for {len(regions)} regions:")
+    for region in regions:
+        if region in embeddings_dict and region in categories_dict:
+            emb_shape = embeddings_dict[region].shape
+            n_categories = len(set(categories_dict[region]))
+            print(f"   {region}: {emb_shape[0]} samples, {emb_shape[1]}D, {n_categories} categories")
+        else:
+            print(f"   ❌ {region}: Missing embeddings or categories")
+    
+    return embeddings_dict, categories_dict, regions
 
 
 def perform_detailed_rsa(embeddings, categories, metadata=None):
@@ -976,16 +1051,37 @@ def generate_comprehensive_report(regions, rsa_results_dict, manifold_results_di
         print()
 
 
-def main():
+def main(neural_data=None, stim_table=None, config=None, embeddings_dict=None, categories_dict=None):
     """
     Main function to run the complete advanced analysis pipeline.
+    
+    Args:
+        neural_data (np.ndarray, optional): Neural activity data
+        stim_table (pd.DataFrame, optional): Stimulus table
+        config (Config, optional): Training configuration
+        embeddings_dict (dict, optional): Pre-computed embeddings
+        categories_dict (dict, optional): Pre-computed categories
     """
     print("🚀 Starting Advanced Neural Representation Evaluation")
     print("=" * 60)
     
     # 1. Load or create analysis data
     print("\n1. Loading Data...")
-    embeddings_dict, categories_dict, regions = load_or_create_analysis_data()
+    
+    if embeddings_dict is not None and categories_dict is not None:
+        # Use provided embeddings directly
+        embeddings_dict, categories_dict, regions = load_or_create_analysis_data_from_embeddings(
+            embeddings_dict, categories_dict
+        )
+    else:
+        # Load from file or train new model
+        embeddings_dict, categories_dict, regions = load_or_create_analysis_data(
+            neural_data, stim_table, config
+        )
+    
+    if embeddings_dict is None:
+        print("❌ Failed to load or create analysis data. Exiting.")
+        return None
     
     print(f"\n✅ Data ready for advanced analysis:")
     for region in regions:
@@ -1109,5 +1205,17 @@ def main():
 
 
 if __name__ == "__main__":
-    # Run the complete analysis
+    # Example usage:
+    
+    # Option 1: Run with your own neural data and stimulus table
+    # neural_data = your_neural_data  # shape: (n_neurons, n_samples)
+    # stim_table = your_stim_table    # pandas DataFrame with trial info
+    # results = main(neural_data=neural_data, stim_table=stim_table)
+    
+    # Option 2: Run with pre-computed embeddings
+    # embeddings_dict = {'Region1': embeddings1, 'Region2': embeddings2}
+    # categories_dict = {'Region1': categories1, 'Region2': categories2}
+    # results = main(embeddings_dict=embeddings_dict, categories_dict=categories_dict)
+    
+    # Option 3: Run with synthetic data (default)
     results = main()
