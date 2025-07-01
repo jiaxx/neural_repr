@@ -182,7 +182,7 @@ def preprocess_neural_data(neural_data: np.ndarray,
         
         # Convert to firing rate and apply sqrt transform
         firing_rate = smoothed / (bin_size / 1000.0)
-        processed = np.sqrt(np.maximum(0.0, firing_rate + 0.25))
+        processed = np.sqrt(np.maximum(0.0, firing_rate + 0.01))
         
     elif neural_data.ndim == 3:
         # Averaged data (n_neurons, n_images, n_trials)
@@ -190,7 +190,7 @@ def preprocess_neural_data(neural_data: np.ndarray,
         if sigma > 0:
             for i in range(neural_data.shape[1]):
                 processed[:, i, :] = gaussian_filter1d(processed[:, i, :], sigma=sigma, axis=0)
-        processed = np.sqrt(np.maximum(0.0, processed + 0.25))
+        processed = np.sqrt(np.maximum(0.0, processed + 0.01))
     else:
         raise ValueError(f"Invalid neural_data shape: {neural_data.shape}")
     
@@ -324,7 +324,7 @@ class NeuralDataset(Dataset):
         else:
             # Average across trials or get single response
             if self.neural_data.ndim == 3:
-                response = self.neural_data[:, image_idx, :].mean(dim=1)
+                response = torch.FloatTensor(self.neural_data[:, image_idx, :]).mean(dim=1)
             else:
                 response = self.neural_data[:, image_idx].clone()
         
