@@ -1,7 +1,8 @@
 # environment.yml
 # Conda environment for Neural Representation Learning Package
+# name should be consistent with package name and folder name
 
-name: neural_repr_learning
+name: neural_repr
 channels:
   - pytorch
   - conda-forge
